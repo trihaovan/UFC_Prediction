@@ -1,4 +1,5 @@
 # Imports and Pandas settings
+print('Importing packages...')
 from bs4 import BeautifulSoup
 import concurrent.futures
 import copy
@@ -7,6 +8,7 @@ import requests
 pd.options.display.max_columns = None
 
 # Initialise empty dict
+print('Initialising...')
 ufc_dict= {
     "Date":[],
     "Winner":[],
@@ -211,12 +213,16 @@ def get_fight_details(fight, date):
     return fight_dict
 
 # Iterate over each event in the events list
+print('Scraping...')
 for event in events:
     # Extract the date of the event
     date = event.find('span', class_="b-statistics__date").text.strip()
     
     # Extract the event URL
     event_url = event.find('a', class_="b-link b-link_style_black")['href']
+
+    # Print updates to terminal
+    print(f'Now scraping fights from: {event_url}')
     
     # Send a GET request to the event URL
     event_response = session.get(event_url)
@@ -242,3 +248,5 @@ for event in events:
 # Export data
 ufc_df = pd.DataFrame(ufc_dict)
 ufc_df.to_csv('data/raw/fight_data.csv')
+
+print('Done!')
