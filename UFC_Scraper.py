@@ -5,6 +5,8 @@ import concurrent.futures
 import copy
 import pandas as pd
 import requests
+from tenacity import retry, stop_after_attempt, wait_fixed
+
 
 # Initialise empty dict
 print('Initialising...')
@@ -44,6 +46,7 @@ ufc_dict= {
     "B_sig_str_clinch":[],
     "R_sig_str_ground":[],
     "B_sig_str_ground":[],
+    "Link":[]
 }
 
 # Set the user agent string for the HTTP headers
@@ -69,11 +72,13 @@ events = main_soup.find_all('tr', class_="b-statistics__table-row")[2:]
 
 
 # Define scraping function
+@retry(stop=stop_after_attempt(5), wait=wait_fixed(1))
 def get_fight_details(fight, date):
     fight_dict = {}
 
     # Extract the fight URL from the 'data-link' key in the fight dictionary
     fight_url = fight['data-link']
+    fight_dict['Link'] = fight_url
     print(f'Scraping fight data from: \n{fight_url}')
         
     # Send a GET request to the fight URL
@@ -86,7 +91,7 @@ def get_fight_details(fight, date):
     valid_check = fight_soup.find('section', class_="b-fight-details__section js-fight-section")
     
     # If fight details are not available, return an empty dictionary
-    if valid_check and valid_check.text.strip() == "Round-by-round stats not currently available.":
+    if valid_check.text.strip() == "Round-by-round stats not currently available.":
         return fight_dict
 
     winner = None
