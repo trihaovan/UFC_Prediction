@@ -1,11 +1,10 @@
-# Imports and Pandas settings
+# Imports
 print('Importing packages...')
 from bs4 import BeautifulSoup
 import concurrent.futures
 import copy
 import pandas as pd
 import requests
-pd.options.display.max_columns = None
 
 # Initialise empty dict
 print('Initialising...')
@@ -75,6 +74,7 @@ def get_fight_details(fight, date):
 
     # Extract the fight URL from the 'data-link' key in the fight dictionary
     fight_url = fight['data-link']
+    print(f'Scraping fight data from: \n{fight_url}')
         
     # Send a GET request to the fight URL
     fight_response = requests.get(fight_url, headers={"User-Agent": user_agent})
@@ -86,7 +86,7 @@ def get_fight_details(fight, date):
     valid_check = fight_soup.find('section', class_="b-fight-details__section js-fight-section")
     
     # If fight details are not available, return an empty dictionary
-    if valid_check.text.strip() == "Round-by-round stats not currently available.":
+    if valid_check and valid_check.text.strip() == "Round-by-round stats not currently available.":
         return fight_dict
 
     winner = None
@@ -222,7 +222,7 @@ for event in events:
     event_url = event.find('a', class_="b-link b-link_style_black")['href']
 
     # Print updates to terminal
-    print(f'Now scraping fights from: {event_url}')
+    # print(f'Now scraping fights from: {event_url}')
     
     # Send a GET request to the event URL
     event_response = session.get(event_url)
@@ -246,6 +246,7 @@ for event in events:
             ufc_dict[key].append(value)
 
 # Export data
+print('Exporting...')
 ufc_df = pd.DataFrame(ufc_dict)
 ufc_df.to_csv('data/raw/fight_data.csv')
 
