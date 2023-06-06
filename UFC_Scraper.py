@@ -78,7 +78,6 @@ def get_fight_details(fight, date):
 
     # Extract the fight URL from the 'data-link' key in the fight dictionary
     fight_url = fight['data-link']
-    fight_dict['Link'] = fight_url
     print(f'Scraping fight data from: \n{fight_url}')
         
     # Send a GET request to the fight URL
@@ -213,6 +212,9 @@ def get_fight_details(fight, date):
     
     # Add the fight date to the fight dictionary
     fight_dict["Date"] = date
+    
+    # Add the link to the fight data to the fight dictionary
+    fight_dict['Link'] = fight_url
 
     # Return the populated fight dictionary
     return fight_dict
