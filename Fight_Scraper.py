@@ -2,20 +2,18 @@
 print('Importing packages...')
 from bs4 import BeautifulSoup
 import concurrent.futures
-import copy
 import pandas as pd
 import requests
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-
-# Initialise empty dict
 print('Initialising...')
-ufc_dict= {
+fights_dict= {
     "Date":[],
     "Winner":[],
     "Method":[],
     "Referee":[],
-    "N_rounds":[],
+    "Format":[],
+    "Weight_class":[],
     "W_round":[],
     "W_round_time":[],
     "R_fighter":[],
@@ -46,38 +44,54 @@ ufc_dict= {
     "B_sig_str_clinch":[],
     "R_sig_str_ground":[],
     "B_sig_str_ground":[],
-    "Link":[]
+    "Fight_link":[],
+    "R_link":[],
+    "B_link":[]
 }
 
 # Set the user agent string for the HTTP headers
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.35"
+fighter_df = pd.read_csv('data/raw/fighter_data.csv')
+fighter_urls = fighter_df['Link']
 
-# Define the main URL to fetch completed events
-main_url = 'http://ufcstats.com/statistics/events/completed?page=all'
+@retry(stop=stop_after_attempt(10), wait=wait_fixed(2))
+def get_fight_rows(fighter_url):
 
-# Create a session object to maintain state across multiple requests
-session = requests.Session()
+    # Create a session object to maintain state across multiple requests
+    session = requests.Session()
 
-# Update the session headers with the user agent string
-session.headers.update({"User-Agent": user_agent})
+    # Update the session headers with the user agent string
+    session.headers.update({"User-Agent": user_agent})
 
-# Send a GET request to the main URL using the session
-main_response = session.get(main_url)
+    # Send a GET request to the main URL using the session
+    fighter_response = session.get(fighter_url)
 
-# Create a BeautifulSoup object from the main response content using the 'lxml' parser
-main_soup = BeautifulSoup(main_response.content, "lxml")
+    # Create a BeautifulSoup object from the main response content using the 'lxml' parser
+    fighter_soup = BeautifulSoup(fighter_response.content, "lxml")
 
-# Find all the event rows on the page, excluding the first two rows (header rows)
-events = main_soup.find_all('tr', class_="b-statistics__table-row")[2:]
+    # Find all the fight rows on the page, excluding the first two rows (header rows)
+    fight_rows = fighter_soup.find_all('tr', class_="b-fight-details__table-row b-fight-details__table-row__hover js-fight-details-click")
 
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        fight_details = list(executor.map(lambda row: get_fight_details(row), fight_rows))
+        
+    return fight_details
 
-# Define scraping function
-@retry(stop=stop_after_attempt(5), wait=wait_fixed(1))
-def get_fight_details(fight, date):
+@retry(stop=stop_after_attempt(10), wait=wait_fixed(2))
+# Initialise a requests session and updating its headers
+def get_fight_details(fight_row):
+
+    session = requests.Session()
+    session.headers.update({"User-Agent": user_agent})
+    
     fight_dict = {}
 
+    # Add the fight date to the fight dictionary
+    date = fight_row.find_all('p', class_="b-fight-details__table-text")[12].text.strip()
+    fight_dict["Date"] = date
+
     # Extract the fight URL from the 'data-link' key in the fight dictionary
-    fight_url = fight['data-link']
+    fight_url = fight_row['data-link']
     print(f'Scraping fight data from: \n{fight_url}')
         
     # Send a GET request to the fight URL
@@ -89,8 +103,86 @@ def get_fight_details(fight, date):
     # Check if the fight details are available
     valid_check = fight_soup.find('section', class_="b-fight-details__section js-fight-section")
     
-    # If fight details are not available, return an empty dictionary
+    # If specific fight stats are not available, scrape what is available
     if valid_check.text.strip() == "Round-by-round stats not currently available.":
+        winner = None
+        win_lose = fight_soup.find_all('div', class_="b-fight-details__person")
+        
+        # Find the winner of the fight by parsing the relevant information
+        for fighter in win_lose:
+            txt = fighter.text.strip().replace('\n', '').split('  ')
+            if txt[0] == 'W':
+                winner = txt[1]
+            elif txt[0] == 'D':
+                winner = 'Draw'
+        fight_dict['Winner'] = winner
+
+        # Retrieve the method of victory from the fight details
+        method = fight_soup.find('i', class_="b-fight-details__text-item_first").find('i', attrs={'style':"font-style: normal"}).text.strip()
+        fight_dict['Method'] = method
+
+        # Extract various information items from the fight details
+        info_items = fight_soup.find_all('i', class_="b-fight-details__text-item")
+        info = [items.text.strip().split('\n', maxsplit=1) for items in info_items]
+        
+        try:    
+            referee = info[3][1].strip()
+        except:
+            referee = None
+        fight_dict['Referee'] = referee
+
+        w_round = info[0][1].strip()
+        w_round_time = info[1][1].strip()
+        format = info[2][1].strip()
+        fight_dict['W_round'] = w_round
+        fight_dict['W_round_time'] = w_round_time
+        fight_dict['Format'] = format
+
+        # Extract weight class:
+        weight_class = fight_soup.find('i', class_='b-fight-details__fight-title').text.strip()
+        fight_dict['Weight_class'] = weight_class
+
+        # Retrieve the names of the red and blue fighters
+        fighters = fight_soup.find_all('a', class_="b-link b-fight-details__person-link")
+        r_fighter = fighters[0].text
+        b_fighter = fighters[1].text
+        fight_dict['R_fighter'] = r_fighter
+        fight_dict['B_fighter'] = b_fighter
+        r_link = fighters[0]['href']
+        b_link = fighters[1]['href']
+        fight_dict['R_link'] = r_link
+        fight_dict['B_link'] = b_link
+
+        fight_dict['R_KD'] = None
+        fight_dict['B_KD'] = None
+        fight_dict['R_total_str'] = None
+        fight_dict['B_total_str'] = None
+        fight_dict['R_TD'] = None
+        fight_dict['B_TD'] = None
+        fight_dict['R_sub_att'] = None
+        fight_dict['B_sub_att'] = None
+        fight_dict['R_rev'] = None
+        fight_dict['B_rev'] = None
+        fight_dict['R_ctrl'] = None
+        fight_dict['B_ctrl'] = None
+        fight_dict['R_sig_str'] = None
+        fight_dict['B_sig_str'] = None
+        fight_dict['R_sig_str_head'] = None
+        fight_dict['B_sig_str_head'] = None
+        fight_dict['R_sig_str_body'] = None
+        fight_dict['B_sig_str_body'] = None
+        fight_dict['R_sig_str_leg'] = None
+        fight_dict['B_sig_str_leg'] = None
+        fight_dict['R_sig_str_dist'] = None
+        fight_dict['B_sig_str_dist'] = None
+        fight_dict['R_sig_str_clinch'] = None
+        fight_dict['B_sig_str_clinch'] = None
+        fight_dict['R_sig_str_ground'] = None
+        fight_dict['B_sig_str_ground'] = None
+    
+        # Add the link to the fight data to the fight dictionary
+        fight_dict['Fight_link'] = fight_url
+
         return fight_dict
 
     winner = None
@@ -121,10 +213,14 @@ def get_fight_details(fight, date):
 
     w_round = info[0][1].strip()
     w_round_time = info[1][1].strip()
-    n_rounds = info[2][1].strip()[0]
+    format = info[2][1].strip()
     fight_dict['W_round'] = w_round
     fight_dict['W_round_time'] = w_round_time
-    fight_dict['N_rounds'] = n_rounds
+    fight_dict['Format'] = format
+
+    # Extract weight class:
+    weight_class = fight_soup.find('i', class_='b-fight-details__fight-title').text.strip()
+    fight_dict['Weight_class'] = weight_class
 
     # Retrieve the names of the red and blue fighters
     r_fighter = fight_soup.find('i', class_="b-fight-details__charts-name b-fight-details__charts-name_pos_left js-chart-name", attrs={'data-color':'red'}).text.strip()
@@ -210,51 +306,33 @@ def get_fight_details(fight, date):
     fight_dict['R_sig_str_ground'] = r_sig_str_ground
     fight_dict['B_sig_str_ground'] = b_sig_str_ground
     
-    # Add the fight date to the fight dictionary
-    fight_dict["Date"] = date
     
     # Add the link to the fight data to the fight dictionary
-    fight_dict['Link'] = fight_url
+    fight_dict['Fight_link'] = fight_url
+
+    fighter_links = fight_soup.find_all('a', class_ = "b-link b-fight-details__person-link")
+    r_link = fighter_links[0]['href']
+    b_link = fighter_links[1]['href']
+    fight_dict["R_link"] = r_link
+    fight_dict["B_link"] = b_link
 
     # Return the populated fight dictionary
     return fight_dict
 
-# Iterate over each event in the events list
-print('Scraping...')
-for event in events:
-    # Extract the date of the event
-    date = event.find('span', class_="b-statistics__date").text.strip()
-    
-    # Extract the event URL
-    event_url = event.find('a', class_="b-link b-link_style_black")['href']
-
-    # Print updates to terminal
-    # print(f'Now scraping fights from: {event_url}')
-    
-    # Send a GET request to the event URL
-    event_response = session.get(event_url)
-    
-    # Create a BeautifulSoup object from the event response content
-    event_soup = BeautifulSoup(event_response.content, "lxml")
-    
-    # Find all the fights in the event
-    fights = event_soup.find_all('tr', class_="b-fight-details__table-row b-fight-details__table-row__hover js-fight-details-click")
-    
-    # Use ThreadPoolExecutor for concurrent execution of get_fight_details function on each fight
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        # Map the get_fight_details function to each fight in the fights list and store the results in fight_details
-        fight_details = list(executor.map(lambda fight: get_fight_details(fight, date), fights))
-    
-    # Iterate over each fight detail in the fight_details list
-    for fight_detail in fight_details:
-        # Iterate over each key-value pair in the fight_detail dictionary
-        for key, value in fight_detail.items():
-            # Append the value to the corresponding key in the ufc_dict
-            ufc_dict[key].append(value)
+with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    fight_details_futures = {executor.submit(get_fight_rows, fighter_url) for fighter_url in fighter_urls}
+    for future in concurrent.futures.as_completed(fight_details_futures):
+        fight_details = future.result()
+        
+        # Add the fighter details to the dictionary
+        for fight_detail in fight_details:
+            for key, value in fight_detail.items():
+                fights_dict[key].append(value)
 
 # Export data
 print('Exporting...')
-ufc_df = pd.DataFrame(ufc_dict)
-ufc_df.to_csv('data/raw/fight_data.csv')
+fights_df = pd.DataFrame(fights_dict)
+fights_df.to_csv('data/raw/fight_data.csv')
 
 print('Done!')
+print(f'Scraped data from {len(fights_df)} fights')
