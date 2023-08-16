@@ -34,6 +34,7 @@ As the project progresses, additional Jupyter notebooks will be added that walk 
 ### Notebooks
 
 - `Cleaning_And_Processing.ipynb`: A notebook going through the joining of the fight and fighter datasets, cleaning of the data, some EDA, and some preprocessing of the data.
+- `Feature_Extraction_And_Engineering.ipynb` (Work in progress): Covers the creation of new features to be considered by the machine learning models.
 
 ### Scripts
 
