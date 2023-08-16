@@ -46,7 +46,7 @@ As the project progresses, additional Jupyter notebooks will be added that walk 
 - `data/raw/fight_data.csv`: The raw output file from `UFC_Scraper.py`, containing detailed fight statistics.
 - `data/raw/fighter_data.csv`: The raw output file from `Fighter_Scraper.py`, containing detailed individual fighter statistics.
 
-- `data/outputs/cleaned_and_processed.csv`: The output from 'Cleaning_And_Processing.ipynb', containing a cleaned and processed version of the joined fight_data and fighter_data datasets.
+- `data/outputs/cleaned_and_processed.csv`: The output from `Cleaning_And_Processing.ipynb`, containing a cleaned and processed version of the joined fight_data and fighter_data datasets.
 
 ## Requirements
 
